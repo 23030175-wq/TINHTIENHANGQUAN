@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime  # <-- Bổ sung thư viện quản lý thời gian
 
 st.set_page_config(page_title="Order Nhà Hàng & Admin", layout="wide")
 
@@ -80,10 +81,14 @@ if page == "🛒 Trang Gọi Món (Khách Hàng)":
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
                 if st.button("🔥 Gửi Order / Thanh Toán"):
-                    # Lưu đơn hàng vào lịch sử để Admin theo dõi
+                    # Lấy thời gian hiện tại lúc khách bấm nút đặt hàng
+                    now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                    
+                    # Lưu đơn hàng kèm theo cột thời gian vào lịch sử cho Admin
                     order_details = {
-                        "Chi tiết": ", ".join([f"{v['Tên món']} (x{v['Số lượng']})" for v in st.session_state.order_dict.values()]),
-                        "Tổng tiền": tong_thanh_toan
+                        "Thời gian đặt": now, # <-- Lưu thời gian vào đây
+                        "Chi tiết đơn hàng": ", ".join([f"{v['Tên món']} (x{v['Số lượng']})" for v in st.session_state.order_dict.values()]),
+                        "Tổng tiền (VNĐ)": tong_thanh_toan
                     }
                     st.session_state.history_orders.append(order_details)
                     st.success("🎉 Đặt món thành công! Bếp đang chuẩn bị...")
@@ -115,7 +120,7 @@ elif page == "🔐 Trang Quản Trị (Admin)":
         if st.session_state.history_orders:
             df_history = pd.DataFrame(st.session_state.history_orders)
             
-            total_revenue = df_history["Tổng tiền"].sum()
+            total_revenue = df_history["Tổng tiền (VNĐ)"].sum()
             total_orders = len(df_history)
             
             c1, c2 = st.columns(2)
@@ -123,7 +128,11 @@ elif page == "🔐 Trang Quản Trị (Admin)":
             c2.metric("Tổng số đơn đã phục vụ", f"{total_orders} đơn")
             
             st.write("### 📝 Danh sách chi tiết các đơn hàng đã đặt:")
-            st.dataframe(df_history, use_container_width=True)
+            # Định dạng hiển thị số tiền có dấu phẩy ngăn cách hàng nghìn trong bảng dataframe
+            st.dataframe(
+                df_history.style.format({"Tổng tiền (VNĐ)": "{:,.0f}"}), 
+                use_container_width=True
+            )
         else:
             st.info("Chưa có đơn hàng nào được đặt trong phiên làm việc này.")
             
