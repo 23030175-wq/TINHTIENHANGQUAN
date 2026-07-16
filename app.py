@@ -11,6 +11,9 @@ if 'history_orders' not in st.session_state:
 if 'order_dict' not in st.session_state:
     st.session_state.order_dict = {}
 
+# Danh sách 20 bàn của nhà hàng
+danh_sach_ban = [f"Bàn {i}" for i in range(1, 21)]
+
 # Thực đơn
 menu = {
     "Đồ ăn": {
@@ -38,12 +41,17 @@ if page == "🛒 Trang Gọi Món (Khách Hàng)":
     col1, col2 = st.columns([1, 1.5])
 
     with col1:
-        st.subheader("Chọn Món")
+        st.subheader("Chọn Món & Số Bàn")
+        
+        # Bổ sung chọn vị trí bàn (Từ bàn 1 đến bàn 20)
+        selected_table = st.selectbox("Chọn số bàn:", danh_sach_ban)
+        
+        st.write("---")
         category = st.selectbox("Chọn loại:", list(menu.keys()))
         item = st.selectbox("Chọn món:", list(menu[category].keys()))
         quantity = st.number_input("Số lượng:", min_value=1, step=1, value=1)
         
-        # Bổ sung ô nhập ghi chú cho món ăn hiện tại
+        # Ô nhập ghi chú cho món ăn hiện tại
         note = st.text_input("Ghi chú cho món này (Ví dụ: Không cay, ít đá...):", value="")
         
         if st.button("Thêm vào giỏ"):
@@ -64,10 +72,10 @@ if page == "🛒 Trang Gọi Món (Khách Hàng)":
                     "Số lượng": quantity,
                     "Thành tiền": price * quantity
                 }
-            st.success(f"Đã cập nhật {item_display_name} vào giỏ!")
+            st.success(f"Đã cập nhật {item_display_name} vào giỏ cho **{selected_table}**!")
 
     with col2:
-        st.subheader("Giỏ hàng")
+        st.subheader(f"Giỏ hàng hiện tại của [{selected_table}]")
         if st.session_state.order_dict:
             df = pd.DataFrame.from_dict(st.session_state.order_dict, orient='index')
             st.table(df[["Tên món", "Đơn giá", "Số lượng", "Thành tiền"]])
@@ -90,14 +98,15 @@ if page == "🛒 Trang Gọi Món (Khách Hàng)":
                 if st.button("🔥 Gửi Order / Thanh Toán"):
                     now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
                     
-                    # Gom chi tiết đơn hàng bao gồm cả tên món và phần ghi chú trong ngoặc đơn
+                    # Gom chi tiết đơn hàng lưu kèm thông tin Số bàn
                     order_details = {
+                        "Số bàn": selected_table,  # <-- Lưu thông tin bàn tại đây
                         "Thời gian đặt": now,
                         "Chi tiết đơn hàng": ", ".join([f"{v['Tên món']} (x{v['Số lượng']})" for v in st.session_state.order_dict.values()]),
                         "Tổng tiền (VNĐ)": tong_thanh_toan
                     }
                     st.session_state.history_orders.append(order_details)
-                    st.success("🎉 Đặt món thành công! Ghi chú đã được gửi xuống bếp.")
+                    st.success(f"🎉 Đặt món thành công cho {selected_table}! Đang chuyển dữ liệu xuống bếp...")
                     st.session_state.order_dict = {} 
                     st.rerun()
                     
@@ -106,7 +115,7 @@ if page == "🛒 Trang Gọi Món (Khách Hàng)":
                     st.session_state.order_dict = {}
                     st.rerun()
         else:
-            st.info("Giỏ hàng đang trống.")
+            st.info(f"Giỏ hàng của {selected_table} đang trống.")
 
 # =================================================================
 # 2. GIAO DIỆN TRANG ADMIN (BẢO MẬT BẰNG MẬT KHẨU)
@@ -120,7 +129,7 @@ elif page == "🔐 Trang Quản Trị (Admin)":
         st.success("Đăng nhập quyền Admin thành công!")
         st.write("---")
         
-        st.subheader("📈 Tổng quan doanh thu thực tế")
+        st.subheader("📈 Tổng quan doanh thu thực tế theo bàn")
         if st.session_state.history_orders:
             df_history = pd.DataFrame(st.session_state.history_orders)
             
@@ -131,13 +140,25 @@ elif page == "🔐 Trang Quản Trị (Admin)":
             c1.metric("Tổng doanh thu nhận được", f"{total_revenue:,.0f} VNĐ")
             c2.metric("Tổng số đơn đã phục vụ", f"{total_orders} đơn")
             
-            st.write("### 📝 Danh sách chi tiết đơn hàng (Kèm ghi chú món):")
+            # Tính toán và hiển thị doanh thu gom nhóm theo từng Bàn
+            st.write("### 🧮 Thống kê doanh thu theo vị trí bàn:")
+            df_table_revenue = df_history.groupby("Số bàn")["Tổng tiền (VNĐ)"].sum().reset_index()
+            st.bar_chart(data=df_table_revenue, x="Số bàn", y="Tổng tiền (VNĐ)")
+            
+            st.write("### 📝 Danh sách chi tiết lịch sử đơn hàng:")
+            # Sắp xếp hiển thị các cột hợp lý
+            cols_order = ["Số bàn", "Thời gian đặt", "Chi tiết đơn hàng", "Tổng tiền (VNĐ)"]
             st.dataframe(
-                df_history.style.format({"Tổng tiền (VNĐ)": "{:,.0f}"}), 
+                df_history[cols_order].style.format({"Tổng tiền (VNĐ)": "{:,.0f}"}), 
                 use_container_width=True
             )
+            
+            # Nút xóa lịch sử phục vụ test code nhanh
+            if st.button("🗑️ Xóa toàn bộ lịch sử đơn hàng"):
+                st.session_state.history_orders = []
+                st.rerun()
         else:
-            st.info("Chưa có đơn hàng nào được đặt trong phiên làm việc này.")
+            st.info("Chưa có đơn hàng nào được đặt từ các bàn.")
             
     elif password != "":
         st.error("❌ Sai mật khẩu! Vui lòng thử lại.")
