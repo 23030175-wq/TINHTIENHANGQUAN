@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime  # <-- Bổ sung thư viện quản lý thời gian
+from datetime import datetime
 
 st.set_page_config(page_title="Order Nhà Hàng & Admin", layout="wide")
 
@@ -43,21 +43,28 @@ if page == "🛒 Trang Gọi Món (Khách Hàng)":
         item = st.selectbox("Chọn món:", list(menu[category].keys()))
         quantity = st.number_input("Số lượng:", min_value=1, step=1, value=1)
         
+        # Bổ sung ô nhập ghi chú cho món ăn hiện tại
+        note = st.text_input("Ghi chú cho món này (Ví dụ: Không cay, ít đá...):", value="")
+        
         if st.button("Thêm vào giỏ"):
             price = menu[category][item]
-            if item in st.session_state.order_dict:
-                st.session_state.order_dict[item]["Số lượng"] += quantity
-                st.session_state.order_dict[item]["Thành tiền"] = (
-                    st.session_state.order_dict[item]["Số lượng"] * price
+            
+            # Tạo chuỗi hiển thị tên món kèm ghi chú nếu có
+            item_display_name = f"{item} ({note})" if note.strip() != "" else item
+            
+            if item_display_name in st.session_state.order_dict:
+                st.session_state.order_dict[item_display_name]["Số lượng"] += quantity
+                st.session_state.order_dict[item_display_name]["Thành tiền"] = (
+                    st.session_state.order_dict[item_display_name]["Số lượng"] * price
                 )
             else:
-                st.session_state.order_dict[item] = {
-                    "Tên món": item,
+                st.session_state.order_dict[item_display_name] = {
+                    "Tên món": item_display_name,
                     "Đơn giá": price,
                     "Số lượng": quantity,
                     "Thành tiền": price * quantity
                 }
-            st.success(f"Đã cập nhật {item} vào giỏ!")
+            st.success(f"Đã cập nhật {item_display_name} vào giỏ!")
 
     with col2:
         st.subheader("Giỏ hàng")
@@ -81,18 +88,17 @@ if page == "🛒 Trang Gọi Món (Khách Hàng)":
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
                 if st.button("🔥 Gửi Order / Thanh Toán"):
-                    # Lấy thời gian hiện tại lúc khách bấm nút đặt hàng
                     now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
                     
-                    # Lưu đơn hàng kèm theo cột thời gian vào lịch sử cho Admin
+                    # Gom chi tiết đơn hàng bao gồm cả tên món và phần ghi chú trong ngoặc đơn
                     order_details = {
-                        "Thời gian đặt": now, # <-- Lưu thời gian vào đây
+                        "Thời gian đặt": now,
                         "Chi tiết đơn hàng": ", ".join([f"{v['Tên món']} (x{v['Số lượng']})" for v in st.session_state.order_dict.values()]),
                         "Tổng tiền (VNĐ)": tong_thanh_toan
                     }
                     st.session_state.history_orders.append(order_details)
-                    st.success("🎉 Đặt món thành công! Bếp đang chuẩn bị...")
-                    st.session_state.order_dict = {} # Xóa giỏ hàng sau khi đặt
+                    st.success("🎉 Đặt món thành công! Ghi chú đã được gửi xuống bếp.")
+                    st.session_state.order_dict = {} 
                     st.rerun()
                     
             with col_btn2:
@@ -108,14 +114,12 @@ if page == "🛒 Trang Gọi Món (Khách Hàng)":
 elif page == "🔐 Trang Quản Trị (Admin)":
     st.title("📊 Hệ thống Quản Lý & Admin - Nhóm Chủ Đề 2")
     
-    # Form đăng nhập đơn giản
     password = st.text_input("Nhập mật khẩu Admin:", type="password")
     
-    if password == "admin123": # Mật khẩu đăng nhập Admin
+    if password == "admin123":
         st.success("Đăng nhập quyền Admin thành công!")
         st.write("---")
         
-        # Thống kê tổng quan
         st.subheader("📈 Tổng quan doanh thu thực tế")
         if st.session_state.history_orders:
             df_history = pd.DataFrame(st.session_state.history_orders)
@@ -127,8 +131,7 @@ elif page == "🔐 Trang Quản Trị (Admin)":
             c1.metric("Tổng doanh thu nhận được", f"{total_revenue:,.0f} VNĐ")
             c2.metric("Tổng số đơn đã phục vụ", f"{total_orders} đơn")
             
-            st.write("### 📝 Danh sách chi tiết các đơn hàng đã đặt:")
-            # Định dạng hiển thị số tiền có dấu phẩy ngăn cách hàng nghìn trong bảng dataframe
+            st.write("### 📝 Danh sách chi tiết đơn hàng (Kèm ghi chú món):")
             st.dataframe(
                 df_history.style.format({"Tổng tiền (VNĐ)": "{:,.0f}"}), 
                 use_container_width=True
