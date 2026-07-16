@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import uuid  # <-- Thư viện tạo ID duy nhất cho mỗi đơn hàng để tránh lỗi Key trùng lặp
+import uuid
 
 st.set_page_config(page_title="Order Nhà Hàng & Admin", layout="wide")
 
@@ -9,8 +9,9 @@ st.set_page_config(page_title="Order Nhà Hàng & Admin", layout="wide")
 if 'history_orders' not in st.session_state:
     st.session_state.history_orders = []
 
-if 'order_dict' not in st.session_state:
-    st.session_state.order_dict = {}
+# Đổi order_dict thành list để quản lý các món trùng tên nhưng khác ghi chú dễ dàng hơn
+if 'order_list' not in st.session_state:
+    st.session_state.order_list = []
 
 # Danh sách 20 bàn của nhà hàng
 danh_sach_ban = [f"Bàn {i}" for i in range(1, 21)]
@@ -43,7 +44,6 @@ if page == "🛒 Trang Gọi Món (Khách Hàng)":
 
     with col1:
         st.subheader("Chọn Món & Số Bàn")
-        
         selected_table = st.selectbox("Chọn số bàn:", danh_sach_ban)
         st.write("---")
         
@@ -51,31 +51,38 @@ if page == "🛒 Trang Gọi Món (Khách Hàng)":
         item = st.selectbox("Chọn món:", list(menu[category].keys()))
         quantity = st.number_input("Số lượng:", min_value=1, step=1, value=1)
         
+        # Ô nhập ghi chú riêng
         note = st.text_input("Ghi chú cho món này (Ví dụ: Không cay, ít đá...):", value="")
         
         if st.button("Thêm vào giỏ"):
             price = menu[category][item]
-            item_display_name = f"{item} ({note})" if note.strip() != "" else item
             
-            if item_display_name in st.session_state.order_dict:
-                st.session_state.order_dict[item_display_name]["Số lượng"] += quantity
-                st.session_state.order_dict[item_display_name]["Thành tiền"] = (
-                    st.session_state.order_dict[item_display_name]["Số lượng"] * price
-                )
-            else:
-                st.session_state.order_dict[item_display_name] = {
-                    "Tên món": item_display_name,
+            # Kiểm tra xem món đó với ghi chú đó đã tồn tại trong giỏ chưa
+            found = False
+            for cart_item in st.session_state.order_list:
+                if cart_item["Tên món"] == item and cart_item["Ghi chú"] == note.strip():
+                    cart_item["Số lượng"] += quantity
+                    cart_item["Thành tiền"] = cart_item["Số lượng"] * price
+                    found = True
+                    break
+            
+            if not found:
+                st.session_state.order_list.append({
+                    "Tên món": item,
                     "Đơn giá": price,
                     "Số lượng": quantity,
+                    "Ghi chú": note.strip() if note.strip() != "" else "Không có",
                     "Thành tiền": price * quantity
-                }
-            st.success(f"Đã cập nhật {item_display_name} vào giỏ cho **{selected_table}**!")
+                })
+                
+            st.success(f"Đã cập nhật {item} vào giỏ cho **{selected_table}**!")
 
     with col2:
         st.subheader(f"Giỏ hàng hiện tại của [{selected_table}]")
-        if st.session_state.order_dict:
-            df = pd.DataFrame.from_dict(st.session_state.order_dict, orient='index')
-            st.table(df[["Tên món", "Đơn giá", "Số lượng", "Thành tiền"]])
+        if st.session_state.order_list:
+            df = pd.DataFrame(st.session_state.order_list)
+            # Hiển thị bảng giỏ hàng có cột Ghi chú rõ ràng cho khách xem
+            st.table(df[["Tên món", "Đơn giá", "Số lượng", "Ghi chú", "Thành tiền"]])
             
             tam_tinh = df["Thành tiền"].sum()
             giam_gia = (tam_tinh * 0.5) if tam_tinh > 1000000 else 0
@@ -94,25 +101,28 @@ if page == "🛒 Trang Gọi Món (Khách Hàng)":
             with col_btn1:
                 if st.button("🔥 Gửi Order / Thanh Toán"):
                     now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                    unique_id = str(uuid.uuid4())[:8]
                     
-                    # Tạo ID duy nhất cho mỗi hóa đơn mới gửi đi
-                    unique_id = str(uuid.uuid4())[:8] # Lấy 8 ký tự đầu để định danh
+                    # Tách riêng biệt Chi tiết món ăn và Toàn bộ ghi chú của đơn hàng
+                    chi_tiet_mon = ", ".join([f"{v['Tên món']} (x{v['Số lượng']})" for v in st.session_state.order_list])
+                    ghi_chu_tong = "; ".join([f"{v['Tên món']}: {v['Ghi chú']}" for v in st.session_state.order_list if v['Ghi chú'] != "Không có"])
                     
                     order_details = {
-                        "id": unique_id,  # <-- Thêm id định danh độc nhất cho đơn
+                        "id": unique_id,
                         "Số bàn": selected_table,
                         "Thời gian đặt": now,
-                        "Chi tiết đơn hàng": ", ".join([f"{v['Tên món']} (x{v['Số lượng']})" for v in st.session_state.order_dict.values()]),
+                        "Chi tiết đơn hàng": chi_tiet_mon,
+                        "Ghi chú từ khách": ghi_chu_tong if ghi_chu_tong != "" else "Không có ghi chú",
                         "Tổng tiền (VNĐ)": tong_thanh_toan
                     }
                     st.session_state.history_orders.append(order_details)
                     st.success(f"🎉 Đặt món thành công cho {selected_table}!")
-                    st.session_state.order_dict = {} 
+                    st.session_state.order_list = [] 
                     st.rerun()
                     
             with col_btn2:
                 if st.button("❌ Xóa giỏ hàng"):
-                    st.session_state.order_dict = {}
+                    st.session_state.order_list = []
                     st.rerun()
         else:
             st.info(f"Giỏ hàng của {selected_table} đang trống.")
@@ -140,46 +150,49 @@ elif page == "🔐 Trang Quản Trị (Admin)":
             c1.metric("Tổng doanh thu nhận được", f"{total_revenue:,.0f} VNĐ")
             c2.metric("Tổng số đơn đã phục vụ", f"{total_orders} đơn")
             
-            # Biểu đồ doanh thu theo bàn
+            # Biểu đồ doanh thu
             st.write("### 🧮 Thống kê doanh thu theo vị trí bàn:")
             df_table_revenue = df_history.groupby("Số bàn")["Tổng tiền (VNĐ)"].sum().reset_index()
             st.bar_chart(data=df_table_revenue, x="Số bàn", y="Tổng tiền (VNĐ)")
             
-            # --- KHU VỰC XỬ LÝ XÓA ĐƠN LẺ ---
-            st.write("### 📝 Danh sách quản lý & Xóa đơn hàng lẻ:")
+            # --- KHU VỰC XỬ LÝ XÓA ĐƠN & XEM GHI CHÚ ---
+            st.write("### 📝 Danh sách quản lý đơn hàng:")
             
-            # Tạo header cho bảng tùy biến
-            h_col1, h_col2, h_col3, h_col4, h_col5 = st.columns([1, 1.5, 4, 1.5, 1])
+            # Tăng số cột lên 6 cột để chèn riêng một cột lớn cho "Ghi chú"
+            h_col1, h_col2, h_col3, h_col4, h_col5, h_col6 = st.columns([0.8, 1.2, 3.5, 2.5, 1.2, 0.8])
             h_col1.markdown("**Số bàn**")
             h_col2.markdown("**Thời gian**")
             h_col3.markdown("**Chi tiết đơn hàng**")
-            h_col4.markdown("**Tổng tiền**")
-            h_col5.markdown("**Thao tác**")
+            h_col4.markdown("**📌 Ghi chú Admin**") # Cột xem ghi chú mới thêm
+            h_col5.markdown("**Tổng tiền**")
+            h_col6.markdown("**Thao tác**")
             st.write("---")
             
-            # Khởi tạo một danh sách tạm thời để lưu các đơn cần xóa
             order_to_delete = None
             
-            # Duyệt qua danh sách đơn hàng thực tế
             for order in st.session_state.history_orders:
-                b_col1, b_col2, b_col3, b_col4, b_col5 = st.columns([1, 1.5, 4, 1.5, 1])
+                b_col1, b_col2, b_col3, b_col4, b_col5, b_col6 = st.columns([0.8, 1.2, 3.5, 2.5, 1.2, 0.8])
                 
                 b_col1.write(order["Số bàn"])
                 b_col2.write(order["Thời gian đặt"])
                 b_col3.write(order["Chi tiết đơn hàng"])
-                b_col4.write(f"{order['Tổng tiền (VNĐ)']:,.0f} VNĐ")
                 
-                # Sử dụng "id" của đơn hàng làm key giúp giải quyết triệt để lỗi trùng lặp Widget hoặc lệch vị trí
-                if b_col5.button("🗑️ Xóa", key=f"delete_{order['id']}"):
+                # Hiển thị dòng chữ ghi chú nổi bật (Nếu có ghi chú thì hiển thị màu cam/đỏ nhẹ để đầu bếp chú ý)
+                if order["Ghi chú từ khách"] != "Không có ghi chú":
+                    b_col4.warning(order["Ghi chú từ khách"])
+                else:
+                    b_col4.write(order["Ghi chú từ khách"])
+                    
+                b_col5.write(f"{order['Tổng tiền (VNĐ)']:,.0f} VNĐ")
+                
+                if b_col6.button("🗑️ Xóa", key=f"delete_{order['id']}"):
                     order_to_delete = order
             
-            # Thực hiện hành động xóa an toàn bên ngoài vòng lặp vẽ UI
             if order_to_delete is not None:
                 st.session_state.history_orders.remove(order_to_delete)
                 st.success(f"Đã xóa đơn hàng thành công!")
                 st.rerun()
             
-            # Nút xóa tất cả
             st.write("---")
             if st.button("🚨 Xóa TOÀN BỘ lịch sử đơn hàng"):
                 st.session_state.history_orders = []
